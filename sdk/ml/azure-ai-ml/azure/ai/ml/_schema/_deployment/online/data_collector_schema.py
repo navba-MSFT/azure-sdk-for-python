@@ -10,7 +10,6 @@ from typing import Any
 from marshmallow import fields, post_load, validates, ValidationError
 
 from azure.ai.ml._schema import NestedField, PatchedSchemaMeta, StringTransformedEnum
-from azure.ai.ml._schema._deployment.online.destination_schema import DestinationSchema
 from azure.ai.ml._schema._deployment.online.request_logging_schema import RequestLoggingSchema
 from azure.ai.ml._schema._deployment.online.deployment_collection_schema import DeploymentCollectionSchema
 
@@ -20,13 +19,12 @@ module_logger = logging.getLogger(__name__)
 
 
 class DataCollectorSchema(metaclass=PatchedSchemaMeta):
-    collections = fields.Mapping(fields.Str, NestedField(DeploymentCollectionSchema))
+    collections = fields.Dict(keys=fields.Str, values=NestedField(DeploymentCollectionSchema))
     rolling_rate = StringTransformedEnum(
         required=False,
         allowed_values=[RollingRate.MINUTE, RollingRate.DAY, RollingRate.HOUR],
     )
-    destination = NestedField(DestinationSchema)
-    sampling_rate = fields.Float()
+    sampling_rate = fields.Float()  # Should be copied to each of the collections
     request_logging = NestedField(RequestLoggingSchema)
 
     # pylint: disable=unused-argument,no-self-use

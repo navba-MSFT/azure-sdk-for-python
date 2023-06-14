@@ -175,21 +175,21 @@ version of the type checker ships. All client libraries in the Python SDK repo a
 
 The easiest way to install and run the type checkers locally is
 with [tox](https://github.com/Azure/azure-sdk-for-python/blob/main/doc/dev/tests.md#tox). This reproduces the exact type checking
-environment run in CI and brings in the third party stub packages necessary. To begin, first install `tox` and `tox-monorepo`:
+environment run in CI and brings in the third party stub packages necessary. To begin, first install `tox`:
 
-`pip install tox tox-monorepo`
+`pip install tox<5`
 
 ### Run mypy
 
-mypy is currently pinned to version [0.931](https://pypi.org/project/mypy/0.931/).
+mypy is currently pinned to version [1.0.0](https://pypi.org/project/mypy/1.0.0/).
 
 To run mypy on your library, run the tox mypy env at the package level:
 
-`.../azure-sdk-for-python/sdk/textanalytics/azure-ai-textanalytics>tox -e mypy -c ../../../eng/tox/tox.ini`
+`.../azure-sdk-for-python/sdk/textanalytics/azure-ai-textanalytics>tox run -e mypy -c ../../../eng/tox/tox.ini --root .`
 
 If you don't want to use `tox` you can also install and run mypy on its own:
 
-`pip install mypy==0.931`
+`pip install mypy==1.0.0`
 
 `.../azure-sdk-for-python/sdk/textanalytics/azure-ai-textanalytics>mypy azure`
 
@@ -217,7 +217,7 @@ Note that pyright requires that node is installed. The command-line [wrapper pac
 
 To run pyright on your library, run the tox pyright env at the package level:
 
-`.../azure-sdk-for-python/sdk/textanalytics/azure-ai-textanalytics>tox -e pyright -c ../../../eng/tox/tox.ini`
+`.../azure-sdk-for-python/sdk/textanalytics/azure-ai-textanalytics>tox run -e pyright -c ../../../eng/tox/tox.ini --root .`
 
 If you don't want to use `tox` you can also install and run pyright on its own:
 
@@ -249,7 +249,7 @@ from the code in the PR vs. the latest release on PyPi.
 
 To run verifytypes on your library, run the tox verifytypes env at the package level:
 
-`.../azure-sdk-for-python/sdk/textanalytics/azure-ai-textanalytics>tox -e verifytypes -c ../../../eng/tox/tox.ini`
+`.../azure-sdk-for-python/sdk/textanalytics/azure-ai-textanalytics>tox run -e verifytypes -c ../../../eng/tox/tox.ini --root .`
 
 If you don't want to use `tox` you can also install and run pyright/verifytypes on its own:
 
@@ -295,10 +295,9 @@ official [mypy docs](https://mypy.readthedocs.io/en/stable/type_inference_and_an
 ### How to opt out of type checking
 
 All client libraries in the Python SDK repo are automatically opted in to running type checking. If there is a
-reason why a particular library should not run type checking, it is possible to add that library to a block list to prevent mypy/pyright
-from running checks.
+reason why a particular library should not run type checking, it is possible to disable mypy/pyright from running in CI.
 
-1) Place the package name on the appropriate block list: [tools/azure-sdk-tools/ci_tools/environment_exclusions.py](https://github.com/Azure/azure-sdk-for-python/blob/main/tools/azure-sdk-tools/ci_tools/environment_exclusions.py).
+1) Disable the check in the library's `pyproject.toml` file following the instructions in [doc/eng_sys_checks.md](https://github.com/Azure/azure-sdk-for-python/blob/main/doc/eng_sys_checks.md#the-pyprojecttoml).
 2) Open an issue tracking that "library-name" should be opted in to running type checking
 
 > Note: Blocking your library from type checking is a *temporary* state. It is expected that checks are re-enabled as soon as possible.

@@ -2,7 +2,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # ---------------------------------------------------------
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access,too-many-lines
 
 import hashlib
 import logging
@@ -12,30 +12,31 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import suppress
 from multiprocessing import cpu_count
+from os import PathLike
 from pathlib import Path
 from platform import system
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple, Union, cast
 
 from colorama import Fore
 from tqdm import TqdmWarning, tqdm
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 
 from azure.ai.ml._artifacts._constants import (
     AML_IGNORE_FILE_NAME,
     ARTIFACT_ORIGIN,
+    AUTO_DELETE_SETTING_NOT_ALLOWED_ERROR_NO_PERSONAL_DATA,
     BLOB_STORAGE_CLIENT_NAME,
     CHUNK_SIZE,
     DEFAULT_CONNECTION_TIMEOUT,
     EMPTY_DIRECTORY_ERROR,
     GEN2_STORAGE_CLIENT_NAME,
     GIT_IGNORE_FILE_NAME,
+    INVALID_MANAGED_DATASTORE_PATH_ERROR_NO_PERSONAL_DATA,
     MAX_CONCURRENCY,
     PROCESSES_PER_CORE,
     UPLOAD_CONFIRMATION,
-)
-from azure.ai.ml._restclient.v2022_05_01.models import (
-    DataVersionBaseData,
-    ModelVersionData,
-    ModelVersionResourceArmPaginatedResult,
+    WORKSPACE_MANAGED_DATASTORE,
+    WORKSPACE_MANAGED_DATASTORE_WITH_SLASH,
 )
 from azure.ai.ml._restclient.v2022_02_01_preview.operations import (  # pylint: disable = unused-import
     ComponentContainersOperations,
@@ -47,18 +48,24 @@ from azure.ai.ml._restclient.v2022_02_01_preview.operations import (  # pylint: 
     ModelContainersOperations,
     ModelVersionsOperations,
 )
+from azure.ai.ml._restclient.v2022_05_01.models import (
+    DataVersionBaseData,
+    ModelVersionData,
+    ModelVersionResourceArmPaginatedResult,
+)
+from azure.ai.ml._restclient.v2023_04_01.models import PendingUploadRequestDto
 from azure.ai.ml._utils._pathspec import GitWildMatchPattern, normalize_file
-from azure.ai.ml._utils.utils import convert_windows_path_to_unix, retry
+from azure.ai.ml._utils.utils import convert_windows_path_to_unix, retry, snake_to_camel
 from azure.ai.ml.constants._common import MAX_AUTOINCREMENT_ATTEMPTS, OrderString
 from azure.ai.ml.entities._assets.asset import Asset
 from azure.ai.ml.exceptions import (
+    AssetPathException,
     EmptyDirectoryError,
     ErrorCategory,
     ErrorTarget,
     ValidationErrorType,
     ValidationException,
 )
-from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 
 if TYPE_CHECKING:
     from azure.ai.ml.operations import ComponentOperations, DataOperations, EnvironmentOperations, ModelOperations
@@ -157,8 +164,7 @@ class GitIgnoreFile(IgnoreFile):
 
 
 def get_ignore_file(directory_path: Union[Path, str]) -> Optional[IgnoreFile]:
-    """Finds and returns IgnoreFile object based on ignore file found in
-    directory_path.
+    """Finds and returns IgnoreFile object based on ignore file found in directory_path.
 
     .amlignore takes precedence over .gitignore and if no file is found, an empty
     IgnoreFile object will be returned.
@@ -230,9 +236,8 @@ def _get_dir_hash(directory: Union[str, Path], _hash: hash_type, ignore_file: Ig
 def _build_metadata_dict(name: str, version: str) -> Dict[str, str]:
     """Build metadata dictionary to attach to uploaded data.
 
-    Metadata includes an upload confirmation field, and for code uploads
-    only, the name and version of the code asset being created for that
-    data.
+    Metadata includes an upload confirmation field, and for code uploads only, the name and version of the code asset
+    being created for that data.
     """
     if name:
         linked_asset_arm_id = {"name": name, "version": version}
@@ -333,8 +338,9 @@ def traverse_directory(
     prefix: str,
     ignore_file: IgnoreFile = IgnoreFile(),
 ) -> Iterable[Tuple[str, Union[str, Any]]]:
-    """Enumerate all files in the given directory and compose paths for them to
-    be uploaded to in the remote storage. e.g.
+    """Enumerate all files in the given directory and compose paths for them to be uploaded to in the remote storage.
+    e.g.
+
     [/mnt/c/Users/dipeck/upload_files/my_file1.txt,
     /mnt/c/Users/dipeck/upload_files/my_file2.txt] -->
 
@@ -354,9 +360,11 @@ def traverse_directory(
     :return: Zipped list of tuples representing the local path and remote destination path for each file
     :rtype: Iterable[Tuple[str, Union[str, Any]]]
     """
-    # Normalize Windows paths
-    root = convert_windows_path_to_unix(root)
-    source = convert_windows_path_to_unix(source)
+    # Normalize Windows paths. Note that path should be resolved first as long part will be converted to a shortcut in
+    # Windows. For example, C:\Users\too-long-user-name\test will be converted to C:\Users\too-lo~1\test by default.
+    # Refer to https://en.wikipedia.org/wiki/8.3_filename for more details.
+    root = convert_windows_path_to_unix(Path(root).resolve())
+    source = convert_windows_path_to_unix(Path(source).resolve())
     working_dir = convert_windows_path_to_unix(os.getcwd())
     project_dir = root[len(str(working_dir)) :] + "/"
     file_paths = [
@@ -399,7 +407,7 @@ def traverse_directory(
     dir_parts = ["" if dir_part == "." else dir_part + "/" for dir_part in dir_parts]
     blob_paths = []
 
-    for (dir_part, name) in zip(dir_parts, file_paths):
+    for dir_part, name in zip(dir_parts, file_paths):
         if file_paths_including_links.get(
             name
         ):  # for symlinks, use symlink name and structure in directory to create remote upload path
@@ -419,11 +427,10 @@ def generate_asset_id(asset_hash: str, include_directory=True) -> str:
 
 
 def get_directory_size(root: os.PathLike, ignore_file: IgnoreFile = IgnoreFile(None)) -> Tuple[int, Dict[str, int]]:
-    """Returns total size of a directory and a dictionary itemizing each sub-
-    path and its size.
+    """Returns total size of a directory and a dictionary itemizing each sub- path and its size.
 
-    If an optional ignore_file argument is provided, then files specified in the ignore file are not \
-    included in the directory size calculation.
+    If an optional ignore_file argument is provided, then files specified in the ignore file are not included in the
+    directory size calculation.
     """
     total_size = 0
     size_list = {}
@@ -683,7 +690,7 @@ def _get_next_version_from_container(
     container_operation: Any,
     resource_group_name: str,
     workspace_name: str,
-    registry_name: str,
+    registry_name: str = None,
     **kwargs,
 ) -> str:
     try:
@@ -735,7 +742,7 @@ def _get_latest_version_from_container(
         )
         version = container.properties.latest_version
 
-    except ResourceNotFoundError:
+    except ResourceNotFoundError as e:
         message = (
             f"Asset {asset_name} does not exist in registry {registry_name}."
             if registry_name
@@ -752,7 +759,7 @@ def _get_latest_version_from_container(
             target=ErrorTarget.ASSET,
             error_category=ErrorCategory.USER_ERROR,
             error_type=ValidationErrorType.RESOURCE_NOT_FOUND,
-        )
+        ) from e
     return version
 
 
@@ -767,8 +774,7 @@ def _get_latest(
 ) -> Union[ModelVersionData, DataVersionBaseData]:
     """Returns the latest version of the asset with the given name.
 
-    Latest is defined as the most recently created, not the most
-    recently updated.
+    Latest is defined as the most recently created, not the most recently updated.
     """
     result = (
         version_operation.list(
@@ -932,14 +938,57 @@ def _resolve_label_to_asset(
 
     resolver = assetOperations._managed_label_resolver.get(label, None)
     if not resolver:
-        msg = "Asset {} with version label {} does not exist in workspace."
+        scope = "registry" if assetOperations._registry_name else "workspace"
+        msg = "Asset {} with version label {} does not exist in {}."
         raise ValidationException(
-            message=msg.format(name, label),
-            no_personal_data_message=msg.format("[name]", "[label]"),
+            message=msg.format(name, label, scope),
+            no_personal_data_message=msg.format("[name]", "[label]", "[scope]"),
             target=ErrorTarget.ASSET,
             error_type=ValidationErrorType.RESOURCE_NOT_FOUND,
         )
     return resolver(name)
+
+
+def _check_or_modify_auto_delete_setting(
+    autoDeleteSetting: Union[Dict, "AutoDeleteSetting"],
+):
+    if autoDeleteSetting is not None:
+        if hasattr(autoDeleteSetting, "condition"):
+            condition = getattr(autoDeleteSetting, "condition")
+            condition = snake_to_camel(condition)
+            setattr(autoDeleteSetting, "condition", condition)
+        elif "condition" in autoDeleteSetting:
+            autoDeleteSetting["condition"] = snake_to_camel(autoDeleteSetting["condition"])
+
+
+def _validate_workspace_managed_datastore(path: Optional[Union[str, PathLike]]) -> Optional[Union[str, PathLike]]:
+    # block cumtomer specified path on managed datastore
+    if path.startswith(WORKSPACE_MANAGED_DATASTORE_WITH_SLASH) or path == WORKSPACE_MANAGED_DATASTORE:
+        path = path.rstrip("/")
+
+        if path != WORKSPACE_MANAGED_DATASTORE:
+            raise AssetPathException(
+                message=INVALID_MANAGED_DATASTORE_PATH_ERROR_NO_PERSONAL_DATA,
+                tartget=ErrorTarget.DATA,
+                no_personal_data_message=INVALID_MANAGED_DATASTORE_PATH_ERROR_NO_PERSONAL_DATA,
+                error_category=ErrorCategory.USER_ERROR,
+            )
+
+        return path + "/paths"
+    return path
+
+
+def _validate_auto_delete_setting_in_data_output(
+    auto_delete_setting: Optional[Union[Dict, "AutoDeleteSetting"]]
+) -> None:
+    # avoid specifying auto_delete_setting in job output now
+    if auto_delete_setting:
+        raise ValidationException(
+            message=AUTO_DELETE_SETTING_NOT_ALLOWED_ERROR_NO_PERSONAL_DATA,
+            tartget=ErrorTarget.DATA,
+            no_personal_data_message=AUTO_DELETE_SETTING_NOT_ALLOWED_ERROR_NO_PERSONAL_DATA,
+            error_category=ErrorCategory.USER_ERROR,
+        )
 
 
 class FileUploadProgressBar(tqdm):
@@ -968,3 +1017,46 @@ class DirectoryUploadProgressBar(tqdm):
             self.completed = current
         if current:
             self.update(current - self.n)
+
+
+def get_storage_info_for_non_registry_asset(
+    service_client, workspace_name, name, version, resource_group
+) -> Dict[str, str]:
+    """Get SAS uri and blob uri for non-registry asset.
+    :param service_client: Service client
+    :type service_client: AzureMachineLearningWorkspaces
+    :param name: Asset name
+    :type name: str
+    :param version: Asset version
+    :type version: str
+    :param resource_group: Resource group
+    :rtype: Dict[str, str]
+    """
+    request_body = PendingUploadRequestDto(pending_upload_type="TemporaryBlobReference")
+    response = service_client.code_versions.create_or_get_start_pending_upload(
+        resource_group_name=resource_group,
+        workspace_name=workspace_name,
+        name=name,
+        version=version,
+        body=request_body,
+    )
+
+    sas_info = {
+        "sas_uri": response.blob_reference_for_consumption.credential.sas_uri,
+        "blob_uri": response.blob_reference_for_consumption.blob_uri,
+    }
+
+    return sas_info
+
+
+def _get_existing_asset_name_and_version(existing_asset):
+    import re
+
+    regex = r"/codes/([^/]+)/versions/([^/]+)"
+
+    arm_id = existing_asset.id
+    match = re.search(regex, arm_id)
+    name = match.group(1)
+    version = match.group(2)
+
+    return name, version

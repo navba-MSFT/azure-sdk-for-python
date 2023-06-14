@@ -19,7 +19,8 @@ from .._models import FileProperties
 from ..aio._upload_helper import upload_datalake_file
 
 if TYPE_CHECKING:
-    from azure.core.credentials import AzureNamedKeyCredential, AzureSasCredential, TokenCredential
+    from azure.core.credentials import AzureNamedKeyCredential, AzureSasCredential
+    from azure.core.credentials_async import AsyncTokenCredential
     from datetime import datetime
     from .._models import ContentSettings
 
@@ -69,7 +70,7 @@ class DataLakeFileClient(PathClient, DataLakeFileClientBase):
         self, account_url: str,
         file_system_name: str,
         file_path: str,
-        credential: Optional[Union[str, Dict[str, str], "AzureNamedKeyCredential", "AzureSasCredential", "TokenCredential"]] = None,  # pylint: disable=line-too-long
+        credential: Optional[Union[str, Dict[str, str], "AzureNamedKeyCredential", "AzureSasCredential", "AsyncTokenCredential"]] = None,  # pylint: disable=line-too-long
         **kwargs: Any
     ) -> None:
         super(DataLakeFileClient, self).__init__(account_url, file_system_name, path_name=file_path,
@@ -158,6 +159,8 @@ class DataLakeFileClient(PathClient, DataLakeFileClientBase):
             see `here <https://github.com/Azure/azure-sdk-for-python/tree/main/sdk/storage/azure-storage-file-datalake
             #other-client--per-operation-configuration>`_.
         :return: response dict (Etag and last modified).
+        :keyword str encryption_context:
+            Specifies the encryption context to set on the file.
 
         .. admonition:: Example:
 
@@ -378,6 +381,8 @@ class DataLakeFileClient(PathClient, DataLakeFileClientBase):
         :keyword int chunk_size:
             The maximum chunk size for uploading a file in chunks.
             Defaults to 100*1024*1024, or 100MB.
+        :keyword str encryption_context:
+            Specifies the encryption context to set on the file.
         :return: response dict (Etag and last modified).
         """
         options = self._upload_options(

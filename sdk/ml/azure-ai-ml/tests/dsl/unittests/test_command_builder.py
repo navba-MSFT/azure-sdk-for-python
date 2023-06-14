@@ -10,6 +10,7 @@ from azure.ai.ml import (
     MpiDistribution,
     Output,
     PyTorchDistribution,
+    RayDistribution,
     TensorFlowDistribution,
     UserIdentityConfiguration,
     command,
@@ -18,7 +19,7 @@ from azure.ai.ml import (
     spark,
 )
 from azure.ai.ml.dsl import pipeline
-from azure.ai.ml.entities import CommandJobLimits, JobResourceConfiguration
+from azure.ai.ml.entities import CommandJobLimits, JobResourceConfiguration, QueueSettings
 from azure.ai.ml.entities._builders import Command
 from azure.ai.ml.entities._job.job_service import (
     JobService,
@@ -170,7 +171,10 @@ class TestCommandFunction:
             }
         }
         actual_component = pydash.omit(
-            test_command._component._to_rest_object().as_dict(), "name", "properties.component_spec.name"
+            test_command._component._to_rest_object().as_dict(),
+            "name",
+            "properties.component_spec.name",
+            "properties.properties.client_component_hash",
         )
         assert actual_component == expected_component
 
@@ -211,6 +215,7 @@ class TestCommandFunction:
             test_no_deterministic_command._component._to_rest_object().as_dict(),
             "name",
             "properties.component_spec.name",
+            "properties.properties.client_component_hash",
         )
         assert actual_component == expected_component
 
@@ -363,7 +368,10 @@ class TestCommandFunction:
 
         # node1's component stores proper inputs & outputs
         actual_component = pydash.omit(
-            node1._component._to_rest_object().as_dict(), "name", "properties.component_spec.name"
+            node1._component._to_rest_object().as_dict(),
+            "name",
+            "properties.component_spec.name",
+            "properties.properties.client_component_hash",
         )
         expected_component = {
             "properties": {
@@ -537,7 +545,10 @@ class TestCommandFunction:
         node1 = command(**test_command_params)
 
         actual_component = pydash.omit(
-            node1._component._to_rest_object().as_dict(), "name", "properties.component_spec.name"
+            node1._component._to_rest_object().as_dict(),
+            "name",
+            "properties.component_spec.name",
+            "properties.properties.client_component_hash",
         )
         expected_component = {
             "properties": {
@@ -594,6 +605,30 @@ class TestCommandFunction:
         assert isinstance(node1.distribution, MpiDistribution)
         rest_dist = node1._to_rest_object()["distribution"]
         assert rest_dist == {"distribution_type": "Mpi", "process_count_per_instance": 1}
+
+        node1.distribution = {
+            "type": "ray",
+            "port": 1234,
+            "include_dashboard": True,
+            "dashboard_port": 4321,
+            "head_node_additional_args": "--disable-usage-stats",
+            "worker_node_additional_args": "--disable-usage-stats",
+        }
+        assert isinstance(node1.distribution, RayDistribution)
+        rest_dist = node1._to_rest_object()["distribution"]
+        assert rest_dist == {
+            "distribution_type": "Ray",
+            "port": 1234,
+            "include_dashboard": True,
+            "dashboard_port": 4321,
+            "head_node_additional_args": "--disable-usage-stats",
+            "worker_node_additional_args": "--disable-usage-stats",
+        }
+
+        node1.distribution = {"type": "ray", "address": "10.0.0.1:1234"}
+        assert isinstance(node1.distribution, RayDistribution)
+        rest_dist = node1._to_rest_object()["distribution"]
+        assert rest_dist == {"distribution_type": "Ray", "address": "10.0.0.1:1234"}
 
         # invalid
         with pytest.raises(ValidationError):
@@ -680,6 +715,35 @@ class TestCommandFunction:
         rest_dict = command_node._to_rest_object()
         assert rest_dict["resources"] == {"instance_type": "STANDARD_D2"}
 
+    def test_queue_settings(self, test_command_params):
+        expected_queue_settings = {"job_tier": "Standard", "priority": 2}
+        test_command_params.update(
+            {
+                "queue_settings": QueueSettings(job_tier="standard", priority="medium"),
+            }
+        )
+        command_node = command(**test_command_params)
+        rest_dict = command_node._to_rest_object()
+        assert rest_dict["queue_settings"] == expected_queue_settings
+
+        test_command_params.update(
+            {
+                "queue_settings": dict(job_tier="standard", priority="medium"),
+            }
+        )
+        command_node = command(**test_command_params)
+        rest_dict = command_node._to_rest_object()
+        assert rest_dict["queue_settings"] == expected_queue_settings
+
+        test_command_params.update(
+            {
+                "queue_settings": QueueSettings(job_tier="Standard", priority="Medium"),
+            }
+        )
+        command_node = command(**test_command_params)
+        rest_dict = command_node._to_rest_object()
+        assert rest_dict["queue_settings"] == expected_queue_settings
+
     def test_to_component_input(self):
         # test literal input
         literal_input_2_expected_type = {
@@ -721,45 +785,44 @@ class TestCommandFunction:
             assert ComponentTranslatableMixin._to_output(job_output, job_dict)._to_dict() == input_type
 
     def test_spark_job_with_dynamic_allocation_disabled(self):
-        with pytest.raises(ValidationException) as ve:
-            node = spark(
-                code="./tests/test_configs/spark_job/basic_spark_job/src",
-                entry={"file": "./main.py"},
-                resources={"instance_type": "Standard_E8S_V3", "runtime_version": "3.1.0"},
-                driver_cores=1,
-                driver_memory="2g",
-                executor_cores=2,
-                executor_memory="2g",
-                executor_instances=2,
-                dynamic_allocation_min_executors=1,
-                dynamic_allocation_max_executors=3,
-            )
-            node._to_rest_object()
-            assert ve.message == "Should not specify min or max executors when dynamic allocation is disabled."
+        node = spark(
+            code="./tests/test_configs/spark_job/basic_spark_job/src",
+            entry={"file": "./main.py"},
+            resources={"instance_type": "Standard_E8S_V3", "runtime_version": "3.2.0"},
+            driver_cores=1,
+            driver_memory="2g",
+            executor_cores=2,
+            executor_memory="2g",
+            executor_instances=2,
+            dynamic_allocation_min_executors=1,
+            dynamic_allocation_max_executors=3,
+        )
+        result = node._validate()
+        message = "Should not specify min or max executors when dynamic allocation is disabled."
+        assert "conf" in result.error_messages and message == result.error_messages["conf"]
 
     def test_executor_instances_is_mandatory_when_dynamic_allocation_disabled(self):
-        with pytest.raises(ValidationException) as ve:
-            node = spark(
-                code="./tests/test_configs/spark_job/basic_spark_job/src",
-                entry={"file": "./main.py"},
-                resources={"instance_type": "Standard_E8S_V3", "runtime_version": "3.1.0"},
-                driver_cores=1,
-                driver_memory="2g",
-                executor_cores=2,
-                executor_memory="2g",
-            )
-            node._to_rest_object()
-            assert (
-                ve.message
-                == "spark.driver.cores, spark.driver.memory, spark.executor.cores, spark.executor.memory and "
-                "spark.executor.instances are mandatory fields."
-            )
+        node = spark(
+            code="./tests/test_configs/spark_job/basic_spark_job/src",
+            entry={"file": "./main.py"},
+            resources={"instance_type": "Standard_E8S_V3", "runtime_version": "3.2.0"},
+            driver_cores=1,
+            driver_memory="2g",
+            executor_cores=2,
+            executor_memory="2g",
+        )
+        result = node._validate()
+        message = (
+            "spark.driver.cores, spark.driver.memory, spark.executor.cores, spark.executor.memory and "
+            "spark.executor.instances are mandatory fields."
+        )
+        assert "conf" in result.error_messages and message == result.error_messages["conf"]
 
     def test_executor_instances_is_specified_as_min_executor_if_unset(self):
         node = spark(
             code="./tests/test_configs/spark_job/basic_spark_job/src",
             entry={"file": "./main.py"},
-            resources={"instance_type": "Standard_E8S_V3", "runtime_version": "3.1.0"},
+            resources={"instance_type": "Standard_E8S_V3", "runtime_version": "3.2.0"},
             driver_cores=1,
             driver_memory="2g",
             executor_cores=2,
@@ -772,32 +835,31 @@ class TestCommandFunction:
         assert node.executor_instances == 1
 
     def test_excutor_instances_throw_error_when_out_of_range(self):
-        with pytest.raises(ValidationException) as ve:
-            node = spark(
-                code="./tests/test_configs/spark_job/basic_spark_job/src",
-                entry={"file": "./main.py"},
-                resources={"instance_type": "Standard_E8S_V3", "runtime_version": "3.1.0"},
-                driver_cores=1,
-                driver_memory="2g",
-                executor_cores=2,
-                executor_memory="2g",
-                executor_instances=4,
-                dynamic_allocation_enabled=True,
-                dynamic_allocation_min_executors=1,
-                dynamic_allocation_max_executors=3,
-            )
-            node._to_rest_object()
-            message = (
-                "Executor instances must be a valid non-negative integer and must be between "
-                "spark.dynamicAllocation.minExecutors and spark.dynamicAllocation.maxExecutors."
-            )
-            assert ve.message == message
+        node = spark(
+            code="./tests/test_configs/spark_job/basic_spark_job/src",
+            entry={"file": "./main.py"},
+            resources={"instance_type": "Standard_E8S_V3", "runtime_version": "3.2.0"},
+            driver_cores=1,
+            driver_memory="2g",
+            executor_cores=2,
+            executor_memory="2g",
+            executor_instances=4,
+            dynamic_allocation_enabled=True,
+            dynamic_allocation_min_executors=1,
+            dynamic_allocation_max_executors=3,
+        )
+        result = node._validate()
+        message = (
+            "Executor instances must be a valid non-negative integer and must be between "
+            "spark.dynamicAllocation.minExecutors and spark.dynamicAllocation.maxExecutors"
+        )
+        assert "conf" in result.error_messages and message == result.error_messages["conf"]
 
     def test_spark_job_with_additional_conf(self):
         node = spark(
             code="./tests/test_configs/spark_job/basic_spark_job/src",
             entry={"file": "./main.py"},
-            resources={"instance_type": "Standard_E8S_V3", "runtime_version": "3.1.0"},
+            resources={"instance_type": "Standard_E8S_V3", "runtime_version": "3.2.0"},
             driver_cores=1,
             driver_memory="2g",
             executor_cores=2,
@@ -823,9 +885,9 @@ class TestCommandFunction:
 
     def test_command_services_nodes(self) -> None:
         services = {
-            "my_jupyterlab": JobService(job_service_type="jupyter_lab", nodes="all"),
+            "my_jupyterlab": JobService(type="jupyter_lab", nodes="all"),
             "my_tensorboard": JobService(
-                job_service_type="tensor_board",
+                type="tensor_board",
                 properties={
                     "logDir": "~/tblog",
                 },
@@ -834,7 +896,7 @@ class TestCommandFunction:
         command_obj = command(
             name="interactive-command-job",
             description="description",
-            environment="AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+            environment="AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
             command="ls",
             compute="testCompute",
             services=services,
@@ -849,14 +911,14 @@ class TestCommandFunction:
 
     def test_command_services(self) -> None:
         services = {
-            "my_ssh": JobService(job_service_type="ssh"),
+            "my_ssh": JobService(type="ssh"),
             "my_tensorboard": JobService(
-                job_service_type="tensor_board",
+                type="tensor_board",
                 properties={
                     "logDir": "~/tblog",
                 },
             ),
-            "my_jupyterlab": JobService(job_service_type="jupyter_lab"),
+            "my_jupyterlab": JobService(type="jupyter_lab"),
         }
         rest_services = {
             "my_ssh": {"job_service_type": "SSH"},
@@ -871,7 +933,7 @@ class TestCommandFunction:
         node = command(
             name="interactive-command-job",
             description="description",
-            environment="AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+            environment="AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
             command="ls",
             compute="testCompute",
             services=services,
@@ -893,7 +955,7 @@ class TestCommandFunction:
             node = command(
                 name="interactive-command-job",
                 description="description",
-                environment="AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+                environment="AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
                 command="ls",
                 compute="testCompute",
                 services=invalid_services_0,
@@ -905,7 +967,7 @@ class TestCommandFunction:
             node = command(
                 name="interactive-command-job",
                 description="description",
-                environment="AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+                environment="AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
                 command="ls",
                 compute="testCompute",
                 services=invalid_services_1,
@@ -917,7 +979,7 @@ class TestCommandFunction:
             node = command(
                 name="interactive-command-job",
                 description="description",
-                environment="AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+                environment="AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
                 command="ls",
                 compute="testCompute",
                 services=invalid_services_2,
@@ -945,7 +1007,7 @@ class TestCommandFunction:
         node = command(
             name="interactive-command-job",
             description="description",
-            environment="AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+            environment="AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
             command="ls",
             compute="testCompute",
             services=services,

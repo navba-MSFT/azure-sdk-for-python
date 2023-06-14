@@ -24,6 +24,7 @@ from azure.ai.ml.entities._assets._artifacts.artifact import ArtifactStorageInfo
 from azure.ai.ml.exceptions import ErrorTarget
 from azure.ai.ml.operations import DataOperations, DatastoreOperations
 from azure.core.paging import ItemPaged
+from azure.core.exceptions import ResourceNotFoundError
 from unittest.mock import ANY
 
 
@@ -187,6 +188,7 @@ class TestDataOperations:
                 artifact_type=ErrorTarget.DATA,
                 show_progress=True,
                 ignore_file=None,
+                blob_uri=None,
             )
         mock_data_operations._operation.create_or_update.assert_called_once()
         assert "version='1'" in str(mock_data_operations._operation.create_or_update.call_args)
@@ -252,6 +254,7 @@ class TestDataOperations:
                 artifact_type=ErrorTarget.DATA,
                 show_progress=True,
                 ignore_file=None,
+                blob_uri=None,
             )
         mock_data_operations._operation.create_or_update.assert_called_once()
         assert "version='1'" in str(mock_data_operations._operation.create_or_update.call_args)
@@ -561,4 +564,5 @@ class TestDataOperations:
                 artifact_type=ErrorTarget.DATA,
                 show_progress=True,
                 ignore_file=None,
+                blob_uri=None,
             )

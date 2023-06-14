@@ -4,7 +4,7 @@
 
 # pylint: disable=protected-access
 
-from abc import abstractclassmethod
+from abc import abstractmethod
 from os import PathLike
 from pathlib import Path
 from typing import IO, AnyStr, Dict, Optional, Union
@@ -62,8 +62,8 @@ class Compute(Resource, RestTranslatableMixin):
 
     @property
     def type(self) -> Optional[str]:
-        """The type of the compute, possible values are ["amlcompute",
-        "computeinstance", "virtualmachine", "kubernetes", "synapsespark"]
+        """The type of the compute, possible values are ["amlcompute", "computeinstance", "virtualmachine",
+        "kubernetes", "synapsespark"]
 
         :return: The type of the compute
         :rtype: Optional[str]
@@ -125,7 +125,8 @@ class Compute(Resource, RestTranslatableMixin):
             return class_type._load_from_rest(obj)
         return UnsupportedCompute._load_from_rest(obj)
 
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def _load_from_rest(cls, rest_obj: ComputeResource) -> "Compute":
         pass
 
@@ -194,7 +195,8 @@ class Compute(Resource, RestTranslatableMixin):
             error_category=ErrorCategory.USER_ERROR,
         )
 
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def _load_from_dict(cls, data: Dict, context: Dict, **kwargs) -> "Compute":
         pass
 

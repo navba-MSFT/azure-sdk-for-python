@@ -1,6 +1,37 @@
 # Release History
 
-## 5.3.0b2 (Unreleased)
+## 5.3.0 (Unreleased)
+
+This version of the client library defaults to the service API version `2023-04-01`.
+
+### Breaking Changes
+
+> Note: The following changes are only breaking from the previous beta. They are not breaking against previous stable versions.
+
+- Renamed model `ExtractSummaryAction` to `ExtractiveSummaryAction`.
+- Renamed model `ExtractSummaryResult` to `ExtractiveSummaryResult`.
+- Renamed client method `begin_abstractive_summary` to `begin_abstract_summary`.
+- Removed `dynamic_classification` client method and related types: `DynamicClassificationResult` and `ClassificationType`.
+- Removed keyword arguments `fhir_version` and `document_type` from `begin_analyze_healthcare_entities` and `AnalyzeHealthcareEntitiesAction`.
+- Removed property `fhir_bundle` from `AnalyzeHealthcareEntitiesResult`. 
+- Removed enum `HealthcareDocumentType`.
+- Removed property `resolutions` from `CategorizedEntity`.
+- Removed models and enums related to resolutions: `ResolutionKind`, `AgeResolution`, `AreaResolution`,
+  `CurrencyResolution`, `DateTimeResolution`, `InformationResolution`, `LengthResolution`,
+  `NumberResolution`, `NumericRangeResolution`, `OrdinalResolution`, `SpeedResolution`, `TemperatureResolution`,
+  `TemporalSpanResolution`, `VolumeResolution`, `WeightResolution`, `AgeUnit`, `AreaUnit`, `TemporalModifier`,
+  `InformationUnit`, `LengthUnit`, `NumberKind`, `RangeKind`, `RelativeTo`, `SpeedUnit`, `TemperatureUnit`,
+  `VolumeUnit`, `DateTimeSubKind`, and `WeightUnit`.
+- Removed property `detected_language` from `RecognizeEntitiesResult`, `RecognizePiiEntitiesResult`, `AnalyzeHealthcareEntitiesResult`,
+  `ExtractKeyPhrasesResult`, `RecognizeLinkedEntitiesResult`, `AnalyzeSentimentResult`, `RecognizeCustomEntitiesResult`,
+  `ClassifyDocumentResult`, `ExtractSummaryResult`, and `AbstractSummaryResult`.
+- Removed property `script` from `DetectedLanguage`.
+
+### Features Added
+
+- New enum values added for `HealthcareEntityCategory` and `HealthcareEntityRelation`.
+
+## 5.3.0b2 (2023-03-07)
 
 This version of the client library defaults to the service API version `2022-10-01-preview`.
 
@@ -12,17 +43,14 @@ This version of the client library defaults to the service API version `2022-10-
 ### Breaking Changes
 
 - Removed models `BaseResolution` and `BooleanResolution`.
-- Renamed property `date_time_sub_kind` to `datetime_subkind` on `DateTimeResolution`.
+- Removed enum value `BooleanResolution` from `ResolutionKind`.
 - Renamed model `AbstractSummaryAction` to `AbstractiveSummaryAction`.
 - Renamed model `AbstractSummaryResult` to `AbstractiveSummaryResult`.
-- Renamed keyword argument `sentence_count` to `max_sentence_count` on `AbstractiveSummaryAction`.
-- Changed automatic language detection, it is now controlled by the boolean keyword argument `auto_detect_language`.
-  Pass `True` to enable automatic language detection for text documents analyzed by long-running operation APIs.
-- Removed keyword argument `autodetect_default_language` - use `language` to provide a default/fallback language.
-
-### Bugs Fixed
+- Removed keyword argument `autodetect_default_language` from long-running operation APIs.
 
 ### Other Changes
+
+ - Improved static typing in the client library. 
 
 ## 5.3.0b1 (2022-11-17)
 

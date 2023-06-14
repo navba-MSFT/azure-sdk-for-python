@@ -202,6 +202,8 @@ class DataLakeFileClient(PathClient):
             see `here <https://github.com/Azure/azure-sdk-for-python/tree/main/sdk/storage/azure-storage-file-datalake
             #other-client--per-operation-configuration>`_.
         :return: response dict (Etag and last modified).
+        :keyword str encryption_context:
+            Specifies the encryption context to set on the file.
 
         .. admonition:: Example:
 
@@ -455,6 +457,8 @@ class DataLakeFileClient(PathClient):
         :keyword int chunk_size:
             The maximum chunk size for uploading a file in chunks.
             Defaults to 100*1024*1024, or 100MB.
+        :keyword str encryption_context:
+            Specifies the encryption context to set on the file.
         :return: response dict (Etag and last modified).
         """
         options = self._upload_options(

@@ -7,7 +7,6 @@ from azure.core.tracing.decorator import distributed_trace
 
 from .crypto import CryptographyClient
 from ._shared import KeyVaultClientBase
-from ._shared.exceptions import error_map as _error_map
 from ._shared._polling import DeleteRecoverPollingMethod, KeyVaultOperationPoller
 from ._models import DeletedKey, KeyVaultKey, KeyProperties, KeyRotationPolicy, ReleaseKeyResult
 
@@ -161,7 +160,7 @@ class KeyClient(KeyVaultClientBase):
         )
 
         bundle = self._client.create_key(
-            vault_base_url=self.vault_url, key_name=name, parameters=parameters, error_map=_error_map, **kwargs
+            vault_base_url=self.vault_url, key_name=name, parameters=parameters, **kwargs
         )
         return KeyVaultKey._from_key_bundle(bundle)
 
@@ -299,50 +298,6 @@ class KeyClient(KeyVaultClientBase):
         return self.create_key(name, key_type="oct-HSM" if hsm else "oct", **kwargs)
 
     @distributed_trace
-    def create_okp_key(self, name: str, **kwargs) -> KeyVaultKey:
-        """Create a new octet key pair or, if ``name`` is in use, create a new version of the key.
-
-        Requires the keys/create permission.
-
-        :param str name: The name for the new key.
-
-        :keyword curve: Elliptic curve name.
-        :paramtype curve: ~azure.keyvault.keys.KeyCurveName or str or None
-        :keyword key_operations: Allowed key operations.
-        :paramtype key_operations: list[~azure.keyvault.keys.KeyOperation or str] or None
-        :keyword hardware_protected: Whether the key should be created in a hardware security module.
-            Defaults to ``False``.
-        :paramtype hardware_protected: bool or None
-        :keyword enabled: Whether the key is enabled for use.
-        :paramtype enabled: bool or None
-        :keyword tags: Application specific metadata in the form of key-value pairs.
-        :paramtype tags: dict[str, str] or None
-        :keyword not_before: Not before date of the key in UTC
-        :paramtype not_before: ~datetime.datetime or None
-        :keyword expires_on: Expiry date of the key in UTC
-        :paramtype expires_on: ~datetime.datetime or None
-        :keyword exportable: Whether the key can be exported.
-        :paramtype exportable: bool or None
-        :keyword release_policy: The policy rules under which the key can be exported.
-        :paramtype release_policy: ~azure.keyvault.keys.KeyReleasePolicy or None
-
-        :returns: The created key
-        :rtype: ~azure.keyvault.keys.KeyVaultKey
-
-        :raises: :class:`~azure.core.exceptions.HttpResponseError`
-
-        Example:
-            .. literalinclude:: ../tests/test_samples_keys.py
-                :start-after: [START create_okp_key]
-                :end-before: [END create_okp_key]
-                :language: python
-                :caption: Create an octet key pair (OKP)
-                :dedent: 8
-        """
-        hsm = kwargs.pop("hardware_protected", False)
-        return self.create_key(name, key_type="OKP-HSM" if hsm else "OKP", **kwargs)
-
-    @distributed_trace
     def begin_delete_key(self, name: str, **kwargs) -> "LROPoller[DeletedKey]":
         """Delete all versions of a key and its cryptographic material.
 
@@ -375,7 +330,7 @@ class KeyClient(KeyVaultClientBase):
         if polling_interval is None:
             polling_interval = 2
         deleted_key = DeletedKey._from_deleted_key_bundle(
-            self._client.delete_key(self.vault_url, name, error_map=_error_map, **kwargs)
+            self._client.delete_key(self.vault_url, name, **kwargs)
         )
 
         command = partial(self.get_deleted_key, name=name, **kwargs)
@@ -413,7 +368,7 @@ class KeyClient(KeyVaultClientBase):
                 :caption: Get a key
                 :dedent: 8
         """
-        bundle = self._client.get_key(self.vault_url, name, key_version=version or "", error_map=_error_map, **kwargs)
+        bundle = self._client.get_key(self.vault_url, name, key_version=version or "", **kwargs)
         return KeyVaultKey._from_key_bundle(bundle)
 
     @distributed_trace
@@ -439,7 +394,7 @@ class KeyClient(KeyVaultClientBase):
                 :caption: Get a deleted key
                 :dedent: 8
         """
-        bundle = self._client.get_deleted_key(self.vault_url, name, error_map=_error_map, **kwargs)
+        bundle = self._client.get_deleted_key(self.vault_url, name, **kwargs)
         return DeletedKey._from_deleted_key_bundle(bundle)
 
     @distributed_trace
@@ -463,7 +418,6 @@ class KeyClient(KeyVaultClientBase):
             self._vault_url,
             maxresults=kwargs.pop("max_page_size", None),
             cls=lambda objs: [DeletedKey._from_deleted_key_item(x) for x in objs],
-            error_map=_error_map,
             **kwargs
         )
 
@@ -488,7 +442,6 @@ class KeyClient(KeyVaultClientBase):
             self._vault_url,
             maxresults=kwargs.pop("max_page_size", None),
             cls=lambda objs: [KeyProperties._from_key_item(x) for x in objs],
-            error_map=_error_map,
             **kwargs
         )
 
@@ -516,7 +469,6 @@ class KeyClient(KeyVaultClientBase):
             name,
             maxresults=kwargs.pop("max_page_size", None),
             cls=lambda objs: [KeyProperties._from_key_item(x) for x in objs],
-            error_map=_error_map,
             **kwargs
         )
 
@@ -545,7 +497,7 @@ class KeyClient(KeyVaultClientBase):
                 key_client.purge_deleted_key("key-name")
 
         """
-        self._client.purge_deleted_key(vault_base_url=self.vault_url, key_name=name, error_map=_error_map, **kwargs)
+        self._client.purge_deleted_key(vault_base_url=self.vault_url, key_name=name, **kwargs)
 
     @distributed_trace
     def begin_recover_deleted_key(self, name: str, **kwargs) -> "LROPoller[KeyVaultKey]":
@@ -580,7 +532,7 @@ class KeyClient(KeyVaultClientBase):
             polling_interval = 2
         recovered_key = KeyVaultKey._from_key_bundle(
             self._client.recover_deleted_key(
-                vault_base_url=self.vault_url, key_name=name, error_map=_error_map, **kwargs
+                vault_base_url=self.vault_url, key_name=name, **kwargs
             )
         )
         command = partial(self.get_key, name=name, **kwargs)
@@ -608,7 +560,7 @@ class KeyClient(KeyVaultClientBase):
         :keyword enabled: Whether the key is enabled for use.
         :paramtype enabled: bool or None
         :keyword tags: Application specific metadata in the form of key-value pairs.
-        :paramtype tags: dict[str, str]
+        :paramtype tags: dict[str, str] or None
         :keyword not_before: Not before date of the key in UTC
         :paramtype not_before: ~datetime.datetime or None
         :keyword expires_on: Expiry date of the key in UTC
@@ -649,7 +601,7 @@ class KeyClient(KeyVaultClientBase):
         )
 
         bundle = self._client.update_key(
-            self.vault_url, name, key_version=version or "", parameters=parameters, error_map=_error_map, **kwargs
+            self.vault_url, name, key_version=version or "", parameters=parameters, **kwargs
         )
         return KeyVaultKey._from_key_bundle(bundle)
 
@@ -679,7 +631,7 @@ class KeyClient(KeyVaultClientBase):
                 :caption: Get a key backup
                 :dedent: 8
         """
-        backup_result = self._client.backup_key(self.vault_url, name, error_map=_error_map, **kwargs)
+        backup_result = self._client.backup_key(self.vault_url, name, **kwargs)
         return backup_result.value
 
     @distributed_trace
@@ -712,7 +664,6 @@ class KeyClient(KeyVaultClientBase):
         bundle = self._client.restore_key(
             self.vault_url,
             parameters=self._models.KeyRestoreParameters(key_bundle_backup=backup),
-            error_map=_error_map,
             **kwargs
         )
         return KeyVaultKey._from_key_bundle(bundle)
@@ -768,7 +719,7 @@ class KeyClient(KeyVaultClientBase):
             release_policy=policy,
         )
 
-        bundle = self._client.import_key(self.vault_url, name, parameters=parameters, error_map=_error_map, **kwargs)
+        bundle = self._client.import_key(self.vault_url, name, parameters=parameters, **kwargs)
         return KeyVaultKey._from_key_bundle(bundle)
 
     @distributed_trace

@@ -13,11 +13,9 @@ from typing import Dict, List, Optional, Union
 
 from marshmallow import INCLUDE, Schema
 
-from azure.ai.ml._restclient.v2022_12_01_preview.models import CommandJob as RestCommandJob
-from azure.ai.ml._restclient.v2022_12_01_preview.models import CommandJobLimits as RestCommandJobLimits
-from azure.ai.ml._restclient.v2022_12_01_preview.models import JobBase
-from azure.ai.ml._restclient.v2022_12_01_preview.models import JobResourceConfiguration as RestJobResourceConfiguration
-from azure.ai.ml._schema.core.fields import NestedField, UnionField
+from azure.ai.ml._restclient.v2023_04_01_preview.models import CommandJob as RestCommandJob
+from azure.ai.ml._restclient.v2023_04_01_preview.models import JobBase
+from azure.ai.ml._schema.core.fields import ExperimentalField, NestedField, UnionField
 from azure.ai.ml._schema.job.command_job import CommandJobSchema
 from azure.ai.ml._schema.job.identity import AMLTokenIdentitySchema, ManagedIdentitySchema, UserIdentitySchema
 from azure.ai.ml._schema.job.services import JobServiceSchema
@@ -25,7 +23,6 @@ from azure.ai.ml.constants._common import BASE_PATH_CONTEXT_KEY, LOCAL_COMPUTE_P
 from azure.ai.ml.constants._component import ComponentSource, NodeType
 from azure.ai.ml.entities._assets import Environment
 from azure.ai.ml.entities._component.command_component import CommandComponent
-from azure.ai.ml.entities._component.component import Component
 from azure.ai.ml.entities._credentials import (
     AmlTokenConfiguration,
     ManagedIdentityConfiguration,
@@ -39,18 +36,20 @@ from azure.ai.ml.entities._job.distribution import (
     DistributionConfiguration,
     MpiDistribution,
     PyTorchDistribution,
+    RayDistribution,
     TensorFlowDistribution,
 )
 from azure.ai.ml.entities._job.job_limits import CommandJobLimits
 from azure.ai.ml.entities._job.job_resource_configuration import JobResourceConfiguration
 from azure.ai.ml.entities._job.job_service import (
-    JobServiceBase,
     JobService,
+    JobServiceBase,
     JupyterLabJobService,
     SshJobService,
     TensorBoardJobService,
     VsCodeJobService,
 )
+from azure.ai.ml.entities._job.queue_settings import QueueSettings
 from azure.ai.ml.entities._job.sweep.early_termination_policy import EarlyTerminationPolicy
 from azure.ai.ml.entities._job.sweep.objective import Objective
 from azure.ai.ml.entities._job.sweep.search_space import (
@@ -70,7 +69,12 @@ from azure.ai.ml.entities._system_data import SystemData
 from azure.ai.ml.exceptions import ErrorCategory, ErrorTarget, ValidationErrorType, ValidationException
 
 from ..._schema import PathAwareSchema
-from ..._schema.job.distribution import MPIDistributionSchema, PyTorchDistributionSchema, TensorFlowDistributionSchema
+from ..._schema.job.distribution import (
+    MPIDistributionSchema,
+    PyTorchDistributionSchema,
+    RayDistributionSchema,
+    TensorFlowDistributionSchema,
+)
 from .._util import (
     convert_ordered_dict_to_dict,
     from_rest_dict_to_dummy_rest_object,
@@ -85,8 +89,7 @@ module_logger = logging.getLogger(__name__)
 
 
 class Command(BaseNode):
-    """Base class for command node, used for command component version
-    consumption.
+    """Base class for command node, used for command component version consumption.
 
     You should not instantiate this class directly. Instead, you should
     create from builder function: command.
@@ -119,7 +122,7 @@ class Command(BaseNode):
     :param code: A local path or http:, https:, azureml: url pointing to a remote location.
     :type code: str
     :param distribution: Distribution configuration for distributed training.
-    :type distribution: Union[Dict, PyTorchDistribution, MpiDistribution, TensorFlowDistribution]
+    :type distribution: Union[Dict, PyTorchDistribution, MpiDistribution, TensorFlowDistribution, RayDistribution]
     :param environment: Environment that training job will run in.
     :type environment: Union[Environment, str]
     :param limits: Command Job limit.
@@ -130,6 +133,8 @@ class Command(BaseNode):
         Please see https://aka.ms/azuremlexperimental for more information.
     :type services:
         Dict[str, Union[JobService, JupyterLabJobService, SshJobService, TensorBoardJobService, VsCodeJobService]]
+    :param queue_settings: Queue settings for the job.
+    :type queue_settings: QueueSettings
     :raises ~azure.ai.ml.exceptions.ValidationException: Raised if Command cannot be successfully validated.
         Details will be provided in the error message.
     """
@@ -158,13 +163,16 @@ class Command(BaseNode):
         identity: Optional[
             Union[ManagedIdentityConfiguration, AmlTokenConfiguration, UserIdentityConfiguration]
         ] = None,
-        distribution: Optional[Union[Dict, MpiDistribution, TensorFlowDistribution, PyTorchDistribution]] = None,
+        distribution: Optional[
+            Union[Dict, MpiDistribution, TensorFlowDistribution, PyTorchDistribution, RayDistribution]
+        ] = None,
         environment: Optional[Union[Environment, str]] = None,
         environment_variables: Optional[Dict] = None,
         resources: Optional[JobResourceConfiguration] = None,
         services: Optional[
             Dict[str, Union[JobService, JupyterLabJobService, SshJobService, TensorBoardJobService, VsCodeJobService]]
         ] = None,
+        queue_settings: Optional[QueueSettings] = None,
         **kwargs,
     ):
         # validate init params are valid type
@@ -195,6 +203,7 @@ class Command(BaseNode):
         self.environment = environment
         self._resources = resources
         self._services = services
+        self.queue_settings = queue_settings
 
         if isinstance(self.component, CommandComponent):
             self.resources = self.resources or self.component.resources
@@ -227,13 +236,13 @@ class Command(BaseNode):
     @property
     def distribution(
         self,
-    ) -> Union[PyTorchDistribution, MpiDistribution, TensorFlowDistribution]:
+    ) -> Union[PyTorchDistribution, MpiDistribution, TensorFlowDistribution, RayDistribution]:
         return self._distribution
 
     @distribution.setter
     def distribution(
         self,
-        value: Union[Dict, PyTorchDistribution, TensorFlowDistribution, MpiDistribution],
+        value: Union[Dict, PyTorchDistribution, TensorFlowDistribution, MpiDistribution, RayDistribution],
     ):
         if isinstance(value, dict):
             dist_schema = UnionField(
@@ -241,6 +250,7 @@ class Command(BaseNode):
                     NestedField(PyTorchDistributionSchema, unknown=INCLUDE),
                     NestedField(TensorFlowDistributionSchema, unknown=INCLUDE),
                     NestedField(MPIDistributionSchema, unknown=INCLUDE),
+                    ExperimentalField(NestedField(RayDistributionSchema, unknown=INCLUDE)),
                 ]
             )
             value = dist_schema._deserialize(value=value, attr=None, data=None)
@@ -257,12 +267,20 @@ class Command(BaseNode):
         self._resources = value
 
     @property
+    def queue_settings(self) -> QueueSettings:
+        return self._queue_settings
+
+    @queue_settings.setter
+    def queue_settings(self, value: Union[Dict, QueueSettings]):
+        if isinstance(value, dict):
+            value = QueueSettings(**value)
+        self._queue_settings = value
+
+    @property
     def identity(
         self,
     ) -> Optional[Union[ManagedIdentityConfiguration, AmlTokenConfiguration, UserIdentityConfiguration]]:
-        """
-        Configuration of the hyperparameter identity.
-        """
+        """Configuration of the hyperparameter identity."""
         return self._identity
 
     @identity.setter
@@ -298,11 +316,13 @@ class Command(BaseNode):
     @property
     def command(self) -> Optional[str]:
         # the same as code
-        return self.component.command if hasattr(self.component, "command") else None
+        if not isinstance(self.component, CommandComponent):
+            return None
+        return self.component.command
 
     @command.setter
     def command(self, value: str) -> None:
-        if isinstance(self.component, Component):
+        if isinstance(self.component, CommandComponent):
             self.component.command = value
         else:
             msg = "Can't set command property for a registered component {}. Tried to set it to {}."
@@ -323,11 +343,13 @@ class Command(BaseNode):
         # you may check _AttrDict._is_arbitrary_attr for detailed logic for Arbitrary judgement),
         # then its value will be set to _AttrDict and be deserialized as {"shape": {}} instead of None,
         # which is invalid in schema validation.
-        return self.component.code if hasattr(self.component, "code") else None
+        if not isinstance(self.component, CommandComponent):
+            return None
+        return self.component.code
 
     @code.setter
     def code(self, value: str) -> None:
-        if isinstance(self.component, Component):
+        if isinstance(self.component, CommandComponent):
             self.component.code = value
         else:
             msg = "Can't set code property for a registered component {}"
@@ -344,6 +366,7 @@ class Command(BaseNode):
         *,
         instance_type: Optional[Union[str, List[str]]] = None,
         instance_count: Optional[int] = None,
+        locations: Optional[List[str]] = None,
         properties: Optional[Dict] = None,
         docker_args: Optional[str] = None,
         shm_size: Optional[str] = None,
@@ -353,6 +376,8 @@ class Command(BaseNode):
         if self.resources is None:
             self.resources = JobResourceConfiguration()
 
+        if locations is not None:
+            self.resources.locations = locations
         if instance_type is not None:
             self.resources.instance_type = instance_type
         if instance_count is not None:
@@ -365,7 +390,7 @@ class Command(BaseNode):
             self.resources.shm_size = shm_size
 
         # Save the resources to internal component as well, otherwise calling sweep() will loose the settings
-        if isinstance(self.component, Component):
+        if isinstance(self.component, CommandComponent):
             self.component.resources = self.resources
 
     def set_limits(self, *, timeout: int, **kwargs):  # pylint: disable=unused-argument
@@ -374,6 +399,19 @@ class Command(BaseNode):
             self.limits.timeout = timeout
         else:
             self.limits = CommandJobLimits(timeout=timeout)
+
+    def set_queue_settings(self, *, job_tier: Optional[str] = None, priority: Optional[str] = None):
+        """Set QueueSettings for the job.
+        :param job_tier: determines the job tier.
+        :type job_tier: str
+        :param priority: controls the priority on the compute.
+        :type priority: str
+        """
+        if isinstance(self.queue_settings, QueueSettings):
+            self.queue_settings.job_tier = job_tier
+            self.queue_settings.priority = priority
+        else:
+            self.queue_settings = QueueSettings(job_tier=job_tier, priority=priority)
 
     def sweep(
         self,
@@ -398,41 +436,65 @@ class Command(BaseNode):
         identity: Optional[
             Union[ManagedIdentityConfiguration, AmlTokenConfiguration, UserIdentityConfiguration]
         ] = None,
+        queue_settings: Optional[QueueSettings] = None,
+        job_tier: Optional[str] = None,
+        priority: Optional[str] = None,
     ) -> Sweep:
-        """Turn the command into a sweep node with extra sweep run setting. The
-        command component in current Command node will be used as its trial
-        component. A command node can sweep for multiple times, and the
-        generated sweep node will share the same trial component.
+        """Turns the command into a sweep node with extra sweep run setting. The command component
+        in the current Command node will be used as its trial component. A command node can sweep
+        multiple times, and the generated sweep node will share the same trial component.
 
-        :param primary_metric: primary metric of the sweep objective, AUC e.g. The metric must be logged in running
-            the trial component.
+        :param primary_metric: The primary metric of the sweep objective - e.g. AUC (Area Under the Curve).
+        The metric must be logged while running the trial component.
         :type primary_metric: str
-        :param goal: goal of the sweep objective.
-        :type goal: str, valid values: maximize or minimize
-        :param sampling_algorithm: sampling algorithm to sample inside search space. Defaults to "random"
-        :type sampling_algorithm: str, valid values: random, grid or bayesian
-        :param compute: target compute to run the node. If not specified, compute of current node will be used.
+        :param goal: The goal of the Sweep objective. Accepted values are "minimize" or "maximize".
+        :type goal: str
+        :param sampling_algorithm: The sampling algorithm to use inside the search space. Defaults to "random".
+        Acceptable values are "random", "grid", or "bayesian".
+        :type sampling_algorithm: str
+        :param compute: The target compute to run the node on. If not specified, the current node's compute
+        will be used.
         :type compute: str
-        :param max_total_trials: maximum trials to run, will overwrite value in limits
+        :param max_total_trials: The maximum number of trials to run. This value will overwrite value in
+        CommandJob.limits if specified.
         :type max_total_trials: int
-        :param max_concurrent_trials: Sweep Job max concurrent trials.
+        :param max_concurrent_trials: The maximum number of concurrent trials for the Sweep job.
         :type max_concurrent_trials: int
-        :param max_total_trials: Sweep Job max total trials.
+        :param max_total_trials: The maximum number of total trials for the Sweep Job.
         :type max_total_trials: int
-        :param timeout: The max run duration in seconds, after which the job will be cancelled.
+        :param timeout: The maximum run duration in seconds, after which the job will be cancelled.
         :type timeout: int
-        :param trial_timeout: Sweep Job Trial timeout value in seconds.
+        :param trial_timeout: The Sweep Job trial timeout value in seconds.
         :type trial_timeout: int
-        :param early_termination_policy: early termination policy of the sweep node:
-        :type early_termination_policy: Union[EarlyTerminationPolicy, str], valid values: bandit, median_stopping
-            or truncation_selection.
-        :param identity: Identity that training job will use while running on compute.
+        :param early_termination_policy: The early termination policy of the sweep node. Acceptable
+        values are "bandit", "median_stopping", or "truncation_selection".
+        :type early_termination_policy: Union[~azure.ai.ml.sweep.BanditPolicy,
+        ~azure.ai.ml.sweep.TruncationSelectionPolicy, ~azure.ai.ml.sweep.MedianStoppingPolicy, str]
+        :param identity: The identity that the training job will use while running on compute.
         :type identity: Union[
-            ManagedIdentityConfiguration,
-            AmlTokenConfiguration,
-            UserIdentityConfiguration]
-        :return: A sweep node with component from current Command node as its trial component.
-        :rtype: Sweep
+            ~azure.ai.ml.ManagedIdentityConfiguration,
+            ~azure.ai.ml.AmlTokenConfiguration,
+            ~azure.ai.ml.UserIdentityConfiguration]
+        :param queue_settings: The queue settings for the job.
+        :type queue_settings: ~azure.ai.ml.entities.QueueSettings
+        :param job_tier: **Experimental** The job tier. Accepted values are "Spot", "Basic",
+        "Standard", or "Premium".
+        :type job_tier: str
+        :param priority: **Experimental** The compute priority. Accepted values are "low",
+        "medium", and "high".
+        :type priority: str
+        :return: A Sweep node with the component from current Command node as its trial component.
+        :rtype: ~azure.ai.ml.entities.Sweep
+
+        .. admonition:: Example:
+            :class: tip
+
+            .. literalinclude:: ../samples/ml_samples_sweep_configurations.py
+                :start-after: [START configure_sweep_job_bandit_policy]
+                :end-before: [END configure_sweep_job_bandit_policy]
+                :language: python
+                :dedent: 8
+                :caption: Creating a Sweep node from a Command job.
         """
         self._swept = True
         # inputs & outputs are already built in source Command obj
@@ -440,6 +502,13 @@ class Command(BaseNode):
         inputs, inputs_search_space = Sweep._get_origin_inputs_and_search_space(self.inputs)
         if search_space:
             inputs_search_space.update(search_space)
+
+        if not queue_settings:
+            queue_settings = self.queue_settings
+        if job_tier is not None:
+            queue_settings.job_tier = job_tier
+        if priority is not None:
+            queue_settings.priority = priority
 
         sweep_node = Sweep(
             trial=copy.deepcopy(
@@ -460,6 +529,7 @@ class Command(BaseNode):
             experiment_name=self.experiment_name,
             identity=self.identity if not identity else identity,
             _from_component_func=True,
+            queue_settings=queue_settings,
         )
         sweep_node.set_limits(
             max_total_trials=max_total_trials,
@@ -504,11 +574,12 @@ class Command(BaseNode):
             services=self.services,
             creation_context=self.creation_context,
             parameters=self.parameters,
+            queue_settings=self.queue_settings,
         )
 
     @classmethod
     def _picked_fields_from_dict_to_rest_object(cls) -> List[str]:
-        return ["resources", "distribution", "limits", "environment_variables"]
+        return ["resources", "distribution", "limits", "environment_variables", "queue_settings"]
 
     def _to_rest_object(self, **kwargs) -> dict:
         rest_obj = super()._to_rest_object(**kwargs)
@@ -519,6 +590,7 @@ class Command(BaseNode):
             "resources": get_rest_dict_for_node_attrs(self.resources, clear_empty_value=True),
             "services": get_rest_dict_for_node_attrs(self.services),
             "identity": self.identity._to_dict() if self.identity else None,
+            "queue_settings": get_rest_dict_for_node_attrs(self.queue_settings, clear_empty_value=True),
         }.items():
             if value is not None:
                 rest_obj[key] = value
@@ -545,8 +617,7 @@ class Command(BaseNode):
         obj = BaseNode._from_rest_object_to_init_params(obj)
 
         if "resources" in obj and obj["resources"]:
-            resources = RestJobResourceConfiguration.from_dict(obj["resources"])
-            obj["resources"] = JobResourceConfiguration._from_rest_object(resources)
+            obj["resources"] = JobResourceConfiguration._from_rest_object(obj["resources"])
 
         # services, sweep won't have services
         if "services" in obj and obj["services"]:
@@ -562,11 +633,13 @@ class Command(BaseNode):
 
         # handle limits
         if "limits" in obj and obj["limits"]:
-            rest_limits = RestCommandJobLimits.from_dict(obj["limits"])
-            obj["limits"] = CommandJobLimits()._from_rest_object(rest_limits)
+            obj["limits"] = CommandJobLimits._from_rest_object(obj["limits"])
 
         if "identity" in obj and obj["identity"]:
             obj["identity"] = _BaseJobIdentityConfiguration._load(obj["identity"])
+
+        if "queue_settings" in obj and obj["queue_settings"]:
+            obj["queue_settings"] = QueueSettings._from_rest_object(obj["queue_settings"])
 
         return obj
 
@@ -602,6 +675,7 @@ class Command(BaseNode):
         command_job._id = obj.id
         command_job.resources = JobResourceConfiguration._from_rest_object(rest_command_job.resources)
         command_job.limits = CommandJobLimits._from_rest_object(rest_command_job.limits)
+        command_job.queue_settings = QueueSettings._from_rest_object(rest_command_job.queue_settings)
         command_job.component._source = (
             ComponentSource.REMOTE_WORKSPACE_JOB
         )  # This is used by pipeline job telemetries.
@@ -634,7 +708,7 @@ class Command(BaseNode):
 
     def __call__(self, *args, **kwargs) -> "Command":
         """Call Command as a function will return a new instance each time."""
-        if isinstance(self._component, Component):
+        if isinstance(self._component, CommandComponent):
             # call this to validate inputs
             node = self._component(*args, **kwargs)
             # merge inputs
@@ -649,7 +723,9 @@ class Command(BaseNode):
                 setattr(node.outputs, name, original_output._data)
             self._refine_optional_inputs_with_no_value(node, kwargs)
             # set default values: compute, environment_variables, outputs
-            node._name = self.name
+            # won't copy name to be able to distinguish if a node's name is assigned by user
+            # e.g. node_1 = command_func()
+            # In above example, node_1.name will be None so we can apply node_1 as it's name
             node.compute = self.compute
             node.tags = self.tags
             # Pass through the display name only if the display name is not system generated.
@@ -660,13 +736,14 @@ class Command(BaseNode):
             node.limits = copy.deepcopy(self.limits)
             node.distribution = copy.deepcopy(self.distribution)
             node.resources = copy.deepcopy(self.resources)
+            node.queue_settings = copy.deepcopy(self.queue_settings)
             node.services = copy.deepcopy(self.services)
             node.identity = copy.deepcopy(self.identity)
             return node
         msg = "Command can be called as a function only when referenced component is {}, currently got {}."
         raise ValidationException(
-            message=msg.format(type(Component), self._component),
-            no_personal_data_message=msg.format(type(Component), "self._component"),
+            message=msg.format(type(CommandComponent), self._component),
+            no_personal_data_message=msg.format(type(CommandComponent), "self._component"),
             target=ErrorTarget.COMMAND_JOB,
             error_type=ValidationErrorType.INVALID_VALUE,
         )

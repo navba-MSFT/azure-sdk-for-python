@@ -12,11 +12,11 @@ from marshmallow import ValidationError
 from pytest_mock import MockFixture
 
 from azure.ai.ml import MLClient, load_job
-from azure.ai.ml._restclient.v2022_10_01_preview.models import JobOutput as RestJobOutput
-from azure.ai.ml._restclient.v2022_10_01_preview.models import MLTableJobInput
-from azure.ai.ml._restclient.v2022_10_01_preview.models import PipelineJob as RestPipelineJob
-from azure.ai.ml._restclient.v2022_10_01_preview.models import UriFolderJobInput
-from azure.ai.ml._restclient.v2022_10_01_preview.models._azure_machine_learning_workspaces_enums import (
+from azure.ai.ml._restclient.v2023_04_01_preview.models import JobOutput as RestJobOutput
+from azure.ai.ml._restclient.v2023_04_01_preview.models import MLTableJobInput
+from azure.ai.ml._restclient.v2023_04_01_preview.models import PipelineJob as RestPipelineJob
+from azure.ai.ml._restclient.v2023_04_01_preview.models import UriFolderJobInput
+from azure.ai.ml._restclient.v2023_04_01_preview.models._azure_machine_learning_workspaces_enums import (
     LearningRateScheduler,
     StochasticOptimizer,
 )
@@ -1189,7 +1189,7 @@ class TestPipelineJobSchema:
                         "_source": "YAML.JOB",
                         "command": "pip freeze && echo " "${{inputs.literal_input}}",
                         "description": "Train a model on the Iris " "dataset-1.",
-                        "environment": "azureml:AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+                        "environment": "azureml:AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
                         "inputs": {
                             "literal_input": {"default": "7", "type": "integer"},
                             "test1": {"mode": "ro_mount", "type": "uri_file"},
@@ -1204,7 +1204,7 @@ class TestPipelineJobSchema:
                         "_source": "YAML.JOB",
                         "command": "echo Hello World",
                         "description": "Train a model on the Iris dataset-2.",
-                        "environment": "azureml:AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+                        "environment": "azureml:AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
                         "inputs": {
                             "test1": {"mode": "ro_mount", "type": "uri_file"},
                             "test2": {"type": "uri_file"},
@@ -1218,7 +1218,7 @@ class TestPipelineJobSchema:
                         "_source": "YAML.JOB",
                         "command": "pip freeze && echo ${{inputs.test1}}",
                         "description": "Train a model on the Iris dataset-1.",
-                        "environment": "azureml:AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+                        "environment": "azureml:AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
                         "inputs": {"test1": {"type": "uri_file", "mode": "ro_mount"}},
                         "is_deterministic": True,
                         "outputs": {"test1": {"type": "uri_folder"}},
@@ -1234,7 +1234,7 @@ class TestPipelineJobSchema:
                         "_source": "YAML.JOB",
                         "command": "pip freeze && echo " "${{inputs.literal_input}}",
                         "description": "Train a model on the Iris " "dataset-1.",
-                        "environment": "azureml:AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+                        "environment": "azureml:AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
                         "inputs": {
                             "literal_input": {"default": "7", "type": "integer"},
                             "test1": {"mode": "ro_mount", "type": "uri_file"},
@@ -1249,7 +1249,7 @@ class TestPipelineJobSchema:
                         "_source": "YAML.JOB",
                         "command": "echo Hello World",
                         "description": "Train a model on the Iris dataset-2.",
-                        "environment": "azureml:AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+                        "environment": "azureml:AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
                         "inputs": {
                             "test1": {"mode": "ro_mount", "type": "uri_file"},
                             "test2": {"type": "uri_file"},
@@ -1263,7 +1263,7 @@ class TestPipelineJobSchema:
                         "_source": "YAML.JOB",
                         "command": "pip freeze && echo ${{inputs.test1}}",
                         "description": "Train a model on the Iris dataset-1.",
-                        "environment": "azureml:AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+                        "environment": "azureml:AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
                         "inputs": {"test1": {"type": "uri_file", "mode": "ro_mount"}},
                         "is_deterministic": True,
                         "outputs": {"test1": {"type": "uri_folder", "mode": "mount"}},
@@ -1297,7 +1297,7 @@ class TestPipelineJobSchema:
             "hello_world_inline_commandjob_1": {
                 "_source": "YAML.JOB",
                 "command": "pip freeze && echo ${{inputs.literal_input}}",
-                "environment": "azureml:AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+                "environment": "azureml:AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
                 "inputs": {
                     "literal_input": {"type": "integer"},
                     "test1": {"type": "uri_file", "mode": "ro_mount"},
@@ -1311,7 +1311,7 @@ class TestPipelineJobSchema:
             "hello_world_inline_commandjob_2": {
                 "_source": "YAML.JOB",
                 "command": "pip freeze && echo ${{inputs.test1}}",
-                "environment": "azureml:AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+                "environment": "azureml:AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
                 "inputs": {
                     "test1": {"mode": "ro_mount", "type": "uri_file"},
                     "test2": {"type": "uri_folder"},
@@ -1324,7 +1324,7 @@ class TestPipelineJobSchema:
             "hello_world_inline_commandjob_3": {
                 "_source": "YAML.JOB",
                 "command": "pip freeze && echo ${{inputs.test1}}",
-                "environment": "azureml:AzureML-sklearn-0.24-ubuntu18.04-py37-cpu:1",
+                "environment": "azureml:AzureML-sklearn-1.0-ubuntu20.04-py38-cpu:33",
                 "inputs": {
                     "test1": {"mode": "ro_mount", "type": "uri_file"},
                     "test2": {"type": "uri_file"},
@@ -1564,14 +1564,6 @@ class TestPipelineJobSchema:
         if "image_" in job_key and "classification" in job_key:
             original_dict_copy["jobs"][job_key]["search_space"][0]["model_name"] = {
                 "type": "choice",
-                "values": ["yolov5"],
-            }
-            self._raise_error_on_wrong_schema(
-                test_yaml_path, original_dict_copy, job_key, mock_machinelearning_client, mocker
-            )
-
-            original_dict_copy["jobs"][job_key]["search_space"][0]["model_name"] = {
-                "type": "choice",
                 "values": ["vitb16r224"],
             }
             dump_yaml_to_file(test_yaml_path, original_dict_copy)
@@ -1584,14 +1576,6 @@ class TestPipelineJobSchema:
         elif "object_detection" in job_key:
             original_dict_copy["jobs"][job_key]["search_space"][0]["model_name"] = {
                 "type": "choice",
-                "values": ["vitb16r224"],
-            }
-            self._raise_error_on_wrong_schema(
-                test_yaml_path, original_dict_copy, job_key, mock_machinelearning_client, mocker
-            )
-
-            original_dict_copy["jobs"][job_key]["search_space"][0]["model_name"] = {
-                "type": "choice",
                 "values": ["yolov5", "fasterrcnn_resnet50_fpn"],
             }
             dump_yaml_to_file(test_yaml_path, original_dict_copy)
@@ -1602,27 +1586,6 @@ class TestPipelineJobSchema:
             self.test_automl_node_in_pipeline_load_dump(test_yaml_path, job_key, mock_machinelearning_client, mocker)
 
         elif "instance_segmentation" in job_key:
-            original_dict_copy["jobs"][job_key]["search_space"][0]["model_name"] = {
-                "type": "choice",
-                "values": ["vitb16r224"],
-            }
-            self._raise_error_on_wrong_schema(
-                test_yaml_path, original_dict_copy, job_key, mock_machinelearning_client, mocker
-            )
-
-            original_dict_copy["jobs"][job_key]["search_space"][0]["model_name"] = {
-                "type": "choice",
-                "values": ["fasterrcnn_resnet50_fpn"],
-            }
-            self._raise_error_on_wrong_schema(
-                test_yaml_path, original_dict_copy, job_key, mock_machinelearning_client, mocker
-            )
-
-            original_dict_copy["jobs"][job_key]["search_space"][0]["model_name"] = "yolov5"
-            self._raise_error_on_wrong_schema(
-                test_yaml_path, original_dict_copy, job_key, mock_machinelearning_client, mocker
-            )
-
             original_dict_copy["jobs"][job_key]["search_space"][0]["model_name"] = {
                 "type": "choice",
                 "values": ["maskrcnn_resnet152_fpn", "maskrcnn_resnet18_fpn"],
